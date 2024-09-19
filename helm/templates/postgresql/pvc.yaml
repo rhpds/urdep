@@ -1,0 +1,11 @@
+{{- if .Values.postgresql.volume }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "urdep.postgresqlName" . }}
+  namespace: {{ include "urdep.namespaceName" . }}
+  labels:
+    {{- include "urdep.labels" . | nindent 4 }}
+spec:
+  {{- .Values.postgresql.volume | toYaml | nindent 2 }}
+{{- end }}

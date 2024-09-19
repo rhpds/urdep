@@ -1,0 +1,94 @@
+{{- if .Values.postgresql.deploy }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "urdep.postgresqlName" . }}
+  namespace: {{ include "urdep.namespaceName" . }}
+  labels:
+    {{- include "urdep.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "urdep.postgresqlSelectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "urdep.postgresqlSelectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.postgresql.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.postgresql.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.postgresql.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: default
+      {{- with .Values.postgresql.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: postgresql
+        env:
+        - name: POSTGRESQL_USER
+          valueFrom:
+            secretKeyRef:
+              key: database-user
+              name: {{ include "urdep.postgresqlName" . }}
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: database-password
+              name: {{ include "urdep.postgresqlName" . }}
+        - name: POSTGRESQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              key: database-name
+              name: {{ include "urdep.postgresqlName" . }}
+        image: {{ include "urdep.postgresqlImage" . }}
+        imagePullPolicy: {{ .Values.postgresql.image.pullPolicy | quote }}
+        livenessProbe:
+          exec:
+            command:
+            - /usr/libexec/check-container
+            - --live
+          initialDelaySeconds: 120
+          timeoutSeconds: 30
+        ports:
+        - containerPort: 5432
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - /usr/libexec/check-container
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+        {{- with .Values.postgresql.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        securityContext:
+          capabilities: {}
+          privileged: false
+        volumeMounts:
+        - mountPath: /var/lib/pgsql/data
+          name: postgresql-data
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      volumes:
+      - name: postgresql-data
+        {{- if .Values.postgresql.volume }}
+        persistentVolumeClaim:
+          claimName: {{ include "urdep.postgresqlName" . }}
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+{{- end }}

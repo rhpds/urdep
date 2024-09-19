@@ -1,0 +1,1 @@
+podman run --name postgres -e POSTGRES_USER=urdep -e POSTGRES_PASSWORD=urdep -e POSTGRES_DB=urdep -p 5432:5432 -d postgres

@@ -1,0 +1,9 @@
+aiohttp
+alembic
+alembic_utils
+asyncpg
+asyncpgsa
+python-json-logger
+sqlalchemy
+sqlalchemy-utils
+semver

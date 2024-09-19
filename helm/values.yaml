@@ -1,0 +1,43 @@
+---
+image:
+  repository: quay.io/rhpds/babylon-demo-experience-api
+  pullPolicy: Always
+  #tagOverride: latest
+
+nameOverride: ""
+
+namespace:
+  # Specifies whether a namespace should be created
+  create: true
+  # The name of the namespace to use.
+  # If not set and create is true, a name is generated using the name template
+  name:
+
+# Enable features for odo development
+odo:
+  enable: false
+
+postgresql:
+  deploy: true
+  databaseName: ur
+  generatePassword: true
+  #password: ...
+  user: ur
+  image:
+    pullPolicy: Always
+    repository: image-registry.openshift-image-registry.svc:5000/openshift/postgresql
+    tag: 13-el9
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  sslmode: disable
+  volume:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
