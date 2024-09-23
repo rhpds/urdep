@@ -6,14 +6,21 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from . import BaseWithName, Database
+from ..config import config
+from . import GlobalBaseWithName
 
-class Actuator(BaseWithName):
-    __tablename__ = f"{Database.db_name_prefix}actuator"
-    __table_args__ = BaseWithName._table_args(
+class Actuator(GlobalBaseWithName):
+    __tablename__ = f"{config.db_name_prefix}actuator"
+    __table_args__ = GlobalBaseWithName._table_args(
         comment="Actuators are configured by governors to perform actions for subjects",
     )
 
     actions: Mapped[List["Action"]] = relationship(
-        backref="actuator",
+        back_populates="actuator",
     )
+
+    @classmethod
+    def create(cls, name: str):
+        return cls(
+            name=name,
+        )

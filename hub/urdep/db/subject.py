@@ -17,7 +17,8 @@ from sqlalchemy.dialects.postgresql import(
     JSONB,
 )
 
-from . import BaseWithNamespacedName, Database
+from ..config import config
+from . import NamespacedBaseWithName
 
 SubjectDesiredState = Literal[
     "started",
@@ -48,16 +49,27 @@ SubjectCurrentState = Literal[
     "destroyed"          # Successfully destroyed
 ]
 
-class Subject(BaseWithNamespacedName):
-    __tablename__ = f"{Database.db_name_prefix}subject"
-    __table_args__ = BaseWithNamespacedName._table_args(
+class Subject(NamespacedBaseWithName):
+    __tablename__ = f"{config.db_name_prefix}subject"
+    __table_args__ = NamespacedBaseWithName._table_args(
         comment="subjects represent anything managed by an actuator",
         tablename=__tablename__,
     )
 
     governor_uuid: Mapped[UUID] = mapped_column(
-        ForeignKey(f"{Database.db_schema}.{Database.db_name_prefix}governor.uuid"),
+        ForeignKey(f"{config.db_name_prefix}governor.uuid"),
         comment="governor configures how the subject is managed",
+    )
+    governor: Mapped[Optional["Governor"]] = relationship(
+        back_populates="subjects",
+    )
+
+    parent_uuid: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey(f"{config.db_name_prefix}subject.uuid"),
+        comment="link to parent subject if this subject is a component of another",
+    )
+    parent: Mapped[Optional["Subject"]] = relationship(
+        foreign_keys=[parent_uuid],
     )
 
     meta: Mapped[Optional[JSONB]] = mapped_column(JSONB)
@@ -65,16 +77,15 @@ class Subject(BaseWithNamespacedName):
     vars: Mapped[Optional[JSONB]] = mapped_column(JSONB)
 
     actions: Mapped[List["Action"]] = relationship(
-        backref="subject",
+        back_populates="subject",
         passive_deletes=True,
     )
 
     current_state: Mapped[SubjectCurrentState] = mapped_column(
         Enum(
             *get_args(SubjectCurrentState),
-            name=f"{Database.db_name_prefix}subject_current_state",
+            name=f"{config.db_name_prefix}subject_current_state",
             create_constraint=True,
-            inherit_schema=True,
             validate_strings=True,
         ),
         server_default="new",
@@ -83,9 +94,8 @@ class Subject(BaseWithNamespacedName):
     desired_state: Mapped[SubjectDesiredState] = mapped_column(
         Enum(
             *get_args(SubjectDesiredState),
-            name=f"{Database.db_name_prefix}subject_desired_state",
+            name=f"{config.db_name_prefix}subject_desired_state",
             create_constraint=True,
-            inherit_schema=True,
             validate_strings=True,
         ),
         server_default="started",

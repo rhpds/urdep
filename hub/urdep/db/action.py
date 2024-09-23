@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional, get_args
+from typing import List, Literal, Optional, get_args
 from uuid import UUID
 
 from sqlalchemy import (
@@ -17,7 +17,8 @@ from sqlalchemy.dialects.postgresql import(
     JSONB,
 )
 
-from . import BaseWithNamespacedName, Database
+from ..config import config
+from . import NamespacedBaseWithName
 
 ActionKind = Literal[
     "provision",
@@ -36,20 +37,39 @@ ActionState = Literal[
     "successful", # Action completed successfully
 ]
 
-class Action(BaseWithNamespacedName):
-    __tablename__ = f"{Database.db_name_prefix}action"
-    __table_args__ = BaseWithNamespacedName._table_args(
+class Action(NamespacedBaseWithName):
+    __tablename__ = f"{config.db_name_prefix}action"
+    __table_args__ = NamespacedBaseWithName._table_args(
         comment="actions represent provisoning and lifecycle activities for a subject",
         tablename=__tablename__,
     )
 
     actuator_uuid: Mapped[UUID] = mapped_column(
-        ForeignKey(f"{Database.db_schema}.{Database.db_name_prefix}actuator.uuid", ondelete='CASCADE'),
+        ForeignKey(f"{config.db_name_prefix}actuator.uuid", ondelete='CASCADE'),
         comment="actuator responsible for this action",
     )
+    actuator: Mapped["Actuator"] = relationship(
+        back_populates="actions",
+    )
+
+    parent_uuid: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey(f"{config.db_name_prefix}action.uuid"),
+        comment="link to parent action if processing as a component of another action",
+    )
+    parent: Mapped[Optional["Action"]] = relationship(
+        back_populates="children",
+        remote_side="Action.uuid",
+    )
+    children: Mapped[List["Action"]] = relationship(
+        back_populates="parent",
+    )
+
     subject_uuid: Mapped[UUID] = mapped_column(
-        ForeignKey(f"{Database.db_schema}.{Database.db_name_prefix}subject.uuid", ondelete='CASCADE'),
+        ForeignKey(f"{config.db_name_prefix}subject.uuid", ondelete='CASCADE'),
         comment="subject of this action",
+    )
+    subject: Mapped["Subject"] = relationship(
+        back_populates="actions",
     )
 
     meta: Mapped[Optional[JSONB]] = mapped_column(JSONB)
@@ -61,9 +81,8 @@ class Action(BaseWithNamespacedName):
     kind: Mapped[ActionKind] = mapped_column(
         Enum(
             *get_args(ActionKind),
-            name=f"{Database.db_name_prefix}action_kind",
+            name=f"{config.db_name_prefix}action_kind",
             create_constraint=True,
-            inherit_schema=True,
             validate_strings=True,
         ),
     )
@@ -71,9 +90,8 @@ class Action(BaseWithNamespacedName):
     action_state: Mapped[ActionState] = mapped_column(
         Enum(
             *get_args(ActionState),
-            name=f"{Database.db_name_prefix}action_state",
+            name=f"{config.db_name_prefix}action_state",
             create_constraint=True,
-            inherit_schema=True,
             validate_strings=True,
         ),
         server_default="new",

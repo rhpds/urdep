@@ -2,8 +2,11 @@ from typing import Literal, get_args
 from uuid import UUID
 
 from sqlalchemy import (
+    CheckConstraint,
     Enum,
     ForeignKey,
+    String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import (
     Mapped,
@@ -11,7 +14,8 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from . import Base, Database
+from ..config import config
+from . import NamespacedBase
 
 GovernorComponentActionHandling = Literal[
     "before",   # Pass action handling to the linked governor before handling
@@ -20,23 +24,38 @@ GovernorComponentActionHandling = Literal[
     "disable",  # Do not pass action handling to linked governor
 ]
 
-class GovernorComponent(Base):
-    __tablename__ = f"{Database.db_schema}.{Database.db_name_prefix}governor_component"
+class GovernorComponent(NamespacedBase):
+    __tablename__ = f"{config.db_name_prefix}governor_component"
+    __table_args__ = NamespacedBase._table_args(
+        CheckConstraint(r"(name ~ '^[A-Za-z_]([A-Za-z0-9_]*[A-Za-z0-9_])?$')", name="name_format"),
+        UniqueConstraint('governor_uuid', 'name', name=f"{__tablename__}_name"),
+        comment="Assocation of governors which reference others as components",
+    )
 
     governor_uuid: Mapped[UUID] = mapped_column(
-        ForeignKey(f"{Database.db_schema}.{Database.db_name_prefix}governor.uuid", ondelete='CASCADE')
+        ForeignKey(f"{config.db_name_prefix}governor.uuid", ondelete='CASCADE')
+    )
+    governor: Mapped["Governor"] = relationship(
+        back_populates="components",
+        foreign_keys=[governor_uuid],
     )
 
     linked_governor_uuid: Mapped[UUID] = mapped_column(
-        ForeignKey(f"{Database.db_schema}.{Database.db_name_prefix}governor.uuid")
+        ForeignKey(f"{config.db_name_prefix}governor.uuid")
+    )
+    linked_governor: Mapped["Governor"] = relationship(
+        foreign_keys=[linked_governor_uuid],
+    )
+
+    name: Mapped[str] = mapped_column(String(255),
+        comment="Unique component name from governor",
     )
     
     provision_handling: Mapped[GovernorComponentActionHandling] = mapped_column(
         Enum(
             *get_args(GovernorComponentActionHandling),
-            name=f"{Database.db_name_prefix}governor_component_action_handling",
+            name=f"{config.db_name_prefix}governor_component_action_handling",
             create_constraint=True,
-            inherit_schema=True,
             validate_strings=True,
         )
     )
@@ -44,9 +63,8 @@ class GovernorComponent(Base):
     start_handling: Mapped[GovernorComponentActionHandling] = mapped_column(
         Enum(
             *get_args(GovernorComponentActionHandling),
-            name=f"{Database.db_name_prefix}governor_component_action_handling",
+            name=f"{config.db_name_prefix}governor_component_action_handling",
             create_constraint=True,
-            inherit_schema=True,
             validate_strings=True,
         )
     )
@@ -54,9 +72,8 @@ class GovernorComponent(Base):
     stop_handling: Mapped[GovernorComponentActionHandling] = mapped_column(
         Enum(
             *get_args(GovernorComponentActionHandling),
-            name=f"{Database.db_name_prefix}governor_component_action_handling",
+            name=f"{config.db_name_prefix}governor_component_action_handling",
             create_constraint=True,
-            inherit_schema=True,
             validate_strings=True,
         )
     )
@@ -64,7 +81,7 @@ class GovernorComponent(Base):
     status_handling: Mapped[GovernorComponentActionHandling] = mapped_column(
         Enum(
             *get_args(GovernorComponentActionHandling),
-            name=f"{Database.db_name_prefix}governor_component_action_handling",
+            name=f"{config.db_name_prefix}governor_component_action_handling",
             create_constraint=True,
             validate_strings=True,
         )
@@ -73,12 +90,8 @@ class GovernorComponent(Base):
     destroy_handling: Mapped[GovernorComponentActionHandling] = mapped_column(
         Enum(
             *get_args(GovernorComponentActionHandling),
-            name=f"{Database.db_name_prefix}governor_component_action_handling",
+            name=f"{config.db_name_prefix}governor_component_action_handling",
             create_constraint=True,
             validate_strings=True,
         )
     )
-
-GovernorComponent.__table_args__ = GovernorComponent._table_args(
-    comment="Assocation of governors which reference others as components",
-)

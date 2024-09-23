@@ -1,20 +1,21 @@
 """initial
 
-Revision ID: ab9d036fdde9
+Revision ID: 2771390989f4
 Revises: 
-Create Date: 2024-09-18 20:31:32.579552
+Create Date: 2024-09-20 16:25:39.152399
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+import sqlalchemy_utils
 from alembic_utils.pg_function import PGFunction
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = 'ab9d036fdde9'
+revision: str = '2771390989f4'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -28,20 +29,29 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text("(NOW() AT TIME ZONE 'utc')"), nullable=False, comment='Creation timestamp'),
     sa.CheckConstraint("(name ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='name_format'),
     sa.PrimaryKeyConstraint('uuid'),
-    schema='public',
     comment='Actuators are configured by governors to perform actions for subjects'
     )
-    op.create_index(op.f('ix_public_urdep_actuator_name'), 'urdep_actuator', ['name'], unique=True, schema='public')
+    op.create_index(op.f('ix_urdep_actuator_name'), 'urdep_actuator', ['name'], unique=True)
     op.create_table('urdep_actuator_token',
+    sa.Column('token', sqlalchemy_utils.types.encrypted.encrypted_type.StringEncryptedType(length=255), nullable=False, comment='Encrypted token value for use by actuator'),
     sa.Column('name', sa.String(length=255), nullable=False, comment='Unique name'),
     sa.Column('uuid', sa.Uuid(), server_default=sa.text('GEN_RANDOM_UUID()'), nullable=False, comment='Unique identifier'),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text("(NOW() AT TIME ZONE 'utc')"), nullable=False, comment='Creation timestamp'),
     sa.CheckConstraint("(name ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='name_format'),
     sa.PrimaryKeyConstraint('uuid'),
-    schema='public',
     comment='Actuator access token for API access'
     )
-    op.create_index(op.f('ix_public_urdep_actuator_token_name'), 'urdep_actuator_token', ['name'], unique=True, schema='public')
+    op.create_index(op.f('ix_urdep_actuator_token_name'), 'urdep_actuator_token', ['name'], unique=True)
+    op.create_index(op.f('ix_urdep_actuator_token_token'), 'urdep_actuator_token', ['token'], unique=True)
+    op.create_table('urdep_namespace',
+    sa.Column('name', sa.String(length=255), nullable=False, comment='Unique name'),
+    sa.Column('uuid', sa.Uuid(), server_default=sa.text('GEN_RANDOM_UUID()'), nullable=False, comment='Unique identifier'),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text("(NOW() AT TIME ZONE 'utc')"), nullable=False, comment='Creation timestamp'),
+    sa.CheckConstraint("(name ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='name_format'),
+    sa.PrimaryKeyConstraint('uuid'),
+    comment='namespace for access control and efficient indexing'
+    )
+    op.create_index(op.f('ix_urdep_namespace_name'), 'urdep_namespace', ['name'], unique=True)
     op.create_table('urdep_governor',
     sa.Column('provision_actuator_uuid', sa.Uuid(), nullable=True),
     sa.Column('start_actuator_uuid', sa.Uuid(), nullable=True),
@@ -50,45 +60,69 @@ def upgrade() -> None:
     sa.Column('destroy_actuator_uuid', sa.Uuid(), nullable=True),
     sa.Column('meta', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('vars', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('namespace', sa.String(length=255), nullable=False, comment='Namespace for context with name'),
+    sa.Column('namespace_uuid', sa.Uuid(), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False, comment='Unique name within namespace'),
     sa.Column('uuid', sa.Uuid(), server_default=sa.text('GEN_RANDOM_UUID()'), nullable=False, comment='Unique identifier'),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text("(NOW() AT TIME ZONE 'utc')"), nullable=False, comment='Creation timestamp'),
     sa.CheckConstraint("(name ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='name_format'),
-    sa.CheckConstraint("(namespace ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='namespace_format'),
-    sa.ForeignKeyConstraint(['destroy_actuator_uuid'], ['public.urdep_actuator.uuid'], ),
-    sa.ForeignKeyConstraint(['provision_actuator_uuid'], ['public.urdep_actuator.uuid'], ),
-    sa.ForeignKeyConstraint(['start_actuator_uuid'], ['public.urdep_actuator.uuid'], ),
-    sa.ForeignKeyConstraint(['status_actuator_uuid'], ['public.urdep_actuator.uuid'], ),
-    sa.ForeignKeyConstraint(['stop_actuator_uuid'], ['public.urdep_actuator.uuid'], ),
+    sa.ForeignKeyConstraint(['destroy_actuator_uuid'], ['urdep_actuator.uuid'], ),
+    sa.ForeignKeyConstraint(['namespace_uuid'], ['urdep_namespace.uuid'], ),
+    sa.ForeignKeyConstraint(['provision_actuator_uuid'], ['urdep_actuator.uuid'], ),
+    sa.ForeignKeyConstraint(['start_actuator_uuid'], ['urdep_actuator.uuid'], ),
+    sa.ForeignKeyConstraint(['status_actuator_uuid'], ['urdep_actuator.uuid'], ),
+    sa.ForeignKeyConstraint(['stop_actuator_uuid'], ['urdep_actuator.uuid'], ),
     sa.PrimaryKeyConstraint('uuid'),
-    sa.UniqueConstraint('namespace', 'name', name='urdep_governor_namespace_name'),
-    schema='public',
+    sa.UniqueConstraint('namespace_uuid', 'name', name='urdep_governor_namespace_name'),
     comment='governors configure management of subjects'
     )
-    op.create_index(op.f('ix_public_urdep_governor_name'), 'urdep_governor', ['name'], unique=False, schema='public')
-    op.create_index(op.f('ix_public_urdep_governor_namespace'), 'urdep_governor', ['namespace'], unique=False, schema='public')
-    op.create_table('public.urdep_governor_component',
+    op.create_index(op.f('ix_urdep_governor_name'), 'urdep_governor', ['name'], unique=False)
+    op.create_index(op.f('ix_urdep_governor_namespace_uuid'), 'urdep_governor', ['namespace_uuid'], unique=False)
+    op.create_table('urdep_governor_component',
     sa.Column('governor_uuid', sa.Uuid(), nullable=False),
     sa.Column('linked_governor_uuid', sa.Uuid(), nullable=False),
-    sa.Column('provision_handling', sa.Enum('before', 'after', 'delegate', 'disable', name='urdep_governor_component_action_handling', inherit_schema=True, create_constraint=True), nullable=False),
-    sa.Column('start_handling', sa.Enum('before', 'after', 'delegate', 'disable', name='urdep_governor_component_action_handling', inherit_schema=True, create_constraint=True), nullable=False),
-    sa.Column('stop_handling', sa.Enum('before', 'after', 'delegate', 'disable', name='urdep_governor_component_action_handling', inherit_schema=True, create_constraint=True), nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=False, comment='Unique component name from governor'),
+    sa.Column('provision_handling', sa.Enum('before', 'after', 'delegate', 'disable', name='urdep_governor_component_action_handling', create_constraint=True), nullable=False),
+    sa.Column('start_handling', sa.Enum('before', 'after', 'delegate', 'disable', name='urdep_governor_component_action_handling', create_constraint=True), nullable=False),
+    sa.Column('stop_handling', sa.Enum('before', 'after', 'delegate', 'disable', name='urdep_governor_component_action_handling', create_constraint=True), nullable=False),
     sa.Column('status_handling', sa.Enum('before', 'after', 'delegate', 'disable', name='urdep_governor_component_action_handling', create_constraint=True), nullable=False),
     sa.Column('destroy_handling', sa.Enum('before', 'after', 'delegate', 'disable', name='urdep_governor_component_action_handling', create_constraint=True), nullable=False),
+    sa.Column('namespace_uuid', sa.Uuid(), nullable=False),
     sa.Column('uuid', sa.Uuid(), server_default=sa.text('GEN_RANDOM_UUID()'), nullable=False, comment='Unique identifier'),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text("(NOW() AT TIME ZONE 'utc')"), nullable=False, comment='Creation timestamp'),
-    sa.ForeignKeyConstraint(['governor_uuid'], ['public.urdep_governor.uuid'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['linked_governor_uuid'], ['public.urdep_governor.uuid'], ),
-    sa.PrimaryKeyConstraint('uuid')
+    sa.CheckConstraint("(name ~ '^[A-Za-z_]([A-Za-z0-9_]*[A-Za-z0-9_])?$')", name='name_format'),
+    sa.ForeignKeyConstraint(['governor_uuid'], ['urdep_governor.uuid'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['linked_governor_uuid'], ['urdep_governor.uuid'], ),
+    sa.ForeignKeyConstraint(['namespace_uuid'], ['urdep_namespace.uuid'], ),
+    sa.PrimaryKeyConstraint('uuid'),
+    sa.UniqueConstraint('governor_uuid', 'name', name='urdep_governor_component_name'),
+    comment='Assocation of governors which reference others as components'
     )
+    op.create_index(op.f('ix_urdep_governor_component_namespace_uuid'), 'urdep_governor_component', ['namespace_uuid'], unique=False)
+    op.create_table('urdep_governor_parameter',
+    sa.Column('governor_uuid', sa.Uuid(), nullable=True),
+    sa.Column('name', sa.String(length=255), nullable=False, comment='Unique parameter name for governor'),
+    sa.Column('default', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('openapi_schema', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('required', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
+    sa.Column('namespace_uuid', sa.Uuid(), nullable=False),
+    sa.Column('uuid', sa.Uuid(), server_default=sa.text('GEN_RANDOM_UUID()'), nullable=False, comment='Unique identifier'),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text("(NOW() AT TIME ZONE 'utc')"), nullable=False, comment='Creation timestamp'),
+    sa.CheckConstraint("(name ~ '^[A-Za-z_]([A-Za-z0-9_]*[A-Za-z0-9_])?$')", name='name_format'),
+    sa.ForeignKeyConstraint(['governor_uuid'], ['urdep_governor.uuid'], ),
+    sa.ForeignKeyConstraint(['namespace_uuid'], ['urdep_namespace.uuid'], ),
+    sa.PrimaryKeyConstraint('uuid'),
+    sa.UniqueConstraint('governor_uuid', 'name', name='urdep_governor_parameter_name'),
+    comment='parameter supported by a governor'
+    )
+    op.create_index(op.f('ix_urdep_governor_parameter_namespace_uuid'), 'urdep_governor_parameter', ['namespace_uuid'], unique=False)
     op.create_table('urdep_subject',
     sa.Column('governor_uuid', sa.Uuid(), nullable=False, comment='governor configures how the subject is managed'),
+    sa.Column('parent_uuid', sa.Uuid(), nullable=True, comment='link to parent subject if this subject is a component of another'),
     sa.Column('meta', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('parameters', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('vars', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('current_state', sa.Enum('new', 'provision-waiting', 'provision-pending', 'provisioning', 'provision-failed', 'start-waiting', 'start-pending', 'starting', 'start-failed', 'started', 'stop-waiting', 'stop-pending', 'stopping', 'stop-failed', 'stopped', 'destroy-waiting', 'destroy-pending', 'destroying', 'destroy-failed', 'destroyed', name='urdep_subject_current_state', schema='public', inherit_schema=True, create_constraint=True), server_default='new', nullable=False),
-    sa.Column('desired_state', sa.Enum('started', 'stopped', 'destroyed', name='urdep_subject_desired_state', schema='public', inherit_schema=True, create_constraint=True), server_default='started', nullable=False),
+    sa.Column('current_state', sa.Enum('new', 'provision-waiting', 'provision-pending', 'provisioning', 'provision-failed', 'start-waiting', 'start-pending', 'starting', 'start-failed', 'started', 'stop-waiting', 'stop-pending', 'stopping', 'stop-failed', 'stopped', 'destroy-waiting', 'destroy-pending', 'destroying', 'destroy-failed', 'destroyed', name='urdep_subject_current_state', create_constraint=True), server_default='new', nullable=False),
+    sa.Column('desired_state', sa.Enum('started', 'stopped', 'destroyed', name='urdep_subject_desired_state', create_constraint=True), server_default='started', nullable=False),
     sa.Column('provision_began', sa.DateTime(timezone=True), nullable=True, comment='when provision handling began'),
     sa.Column('provision_completed', sa.DateTime(timezone=True), nullable=True, comment='when provision completed'),
     sa.Column('provision_data', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
@@ -109,47 +143,48 @@ def upgrade() -> None:
     sa.Column('destroy_completed', sa.DateTime(timezone=True), nullable=True, comment='when last destroy attempt completed'),
     sa.Column('destroy_data', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('destroy_messages', sa.Text(), nullable=True),
-    sa.Column('namespace', sa.String(length=255), nullable=False, comment='Namespace for context with name'),
+    sa.Column('namespace_uuid', sa.Uuid(), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False, comment='Unique name within namespace'),
     sa.Column('uuid', sa.Uuid(), server_default=sa.text('GEN_RANDOM_UUID()'), nullable=False, comment='Unique identifier'),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text("(NOW() AT TIME ZONE 'utc')"), nullable=False, comment='Creation timestamp'),
     sa.CheckConstraint("(name ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='name_format'),
-    sa.CheckConstraint("(namespace ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='namespace_format'),
-    sa.ForeignKeyConstraint(['governor_uuid'], ['public.urdep_governor.uuid'], ),
+    sa.ForeignKeyConstraint(['governor_uuid'], ['urdep_governor.uuid'], ),
+    sa.ForeignKeyConstraint(['namespace_uuid'], ['urdep_namespace.uuid'], ),
+    sa.ForeignKeyConstraint(['parent_uuid'], ['urdep_subject.uuid'], ),
     sa.PrimaryKeyConstraint('uuid'),
-    sa.UniqueConstraint('namespace', 'name', name='urdep_subject_namespace_name'),
-    schema='public',
+    sa.UniqueConstraint('namespace_uuid', 'name', name='urdep_subject_namespace_name'),
     comment='subjects represent anything managed by an actuator'
     )
-    op.create_index(op.f('ix_public_urdep_subject_name'), 'urdep_subject', ['name'], unique=False, schema='public')
-    op.create_index(op.f('ix_public_urdep_subject_namespace'), 'urdep_subject', ['namespace'], unique=False, schema='public')
+    op.create_index(op.f('ix_urdep_subject_name'), 'urdep_subject', ['name'], unique=False)
+    op.create_index(op.f('ix_urdep_subject_namespace_uuid'), 'urdep_subject', ['namespace_uuid'], unique=False)
     op.create_table('urdep_action',
     sa.Column('actuator_uuid', sa.Uuid(), nullable=False, comment='actuator responsible for this action'),
+    sa.Column('parent_uuid', sa.Uuid(), nullable=True, comment='link to parent action if processing as a component of another action'),
     sa.Column('subject_uuid', sa.Uuid(), nullable=False, comment='subject of this action'),
     sa.Column('meta', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('vars', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('actuator_data', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('data', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('messages', sa.Text(), nullable=True),
-    sa.Column('kind', sa.Enum('provision', 'start', 'stop', 'status', 'destroy', name='urdep_action_kind', schema='public', inherit_schema=True, create_constraint=True), nullable=False),
-    sa.Column('action_state', sa.Enum('new', 'waiting', 'pending', 'running', 'failed', 'successful', name='urdep_action_state', schema='public', inherit_schema=True, create_constraint=True), server_default='new', nullable=False),
+    sa.Column('kind', sa.Enum('provision', 'start', 'stop', 'status', 'destroy', name='urdep_action_kind', create_constraint=True), nullable=False),
+    sa.Column('action_state', sa.Enum('new', 'waiting', 'pending', 'running', 'failed', 'successful', name='urdep_action_state', create_constraint=True), server_default='new', nullable=False),
     sa.Column('began', sa.DateTime(timezone=True), nullable=True, comment='when action handling began'),
     sa.Column('completed', sa.DateTime(timezone=True), nullable=True, comment='when action handling completed'),
-    sa.Column('namespace', sa.String(length=255), nullable=False, comment='Namespace for context with name'),
+    sa.Column('namespace_uuid', sa.Uuid(), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False, comment='Unique name within namespace'),
     sa.Column('uuid', sa.Uuid(), server_default=sa.text('GEN_RANDOM_UUID()'), nullable=False, comment='Unique identifier'),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text("(NOW() AT TIME ZONE 'utc')"), nullable=False, comment='Creation timestamp'),
     sa.CheckConstraint("(name ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='name_format'),
-    sa.CheckConstraint("(namespace ~ '^[A-Za-z]([A-Za-z0-9\\-.]*[A-Za-z0-9])?$')", name='namespace_format'),
-    sa.ForeignKeyConstraint(['actuator_uuid'], ['public.urdep_actuator.uuid'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['subject_uuid'], ['public.urdep_subject.uuid'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['actuator_uuid'], ['urdep_actuator.uuid'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['namespace_uuid'], ['urdep_namespace.uuid'], ),
+    sa.ForeignKeyConstraint(['parent_uuid'], ['urdep_action.uuid'], ),
+    sa.ForeignKeyConstraint(['subject_uuid'], ['urdep_subject.uuid'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('uuid'),
-    sa.UniqueConstraint('namespace', 'name', name='urdep_action_namespace_name'),
-    schema='public',
+    sa.UniqueConstraint('namespace_uuid', 'name', name='urdep_action_namespace_name'),
     comment='actions represent provisoning and lifecycle activities for a subject'
     )
-    op.create_index(op.f('ix_public_urdep_action_name'), 'urdep_action', ['name'], unique=False, schema='public')
-    op.create_index(op.f('ix_public_urdep_action_namespace'), 'urdep_action', ['namespace'], unique=False, schema='public')
+    op.create_index(op.f('ix_urdep_action_name'), 'urdep_action', ['name'], unique=False)
+    op.create_index(op.f('ix_urdep_action_namespace_uuid'), 'urdep_action', ['namespace_uuid'], unique=False)
     public_urdep_inherit_subject_desired_state = PGFunction(
         schema="public",
         signature="urdep_inherit_subject_desired_state()",
@@ -183,18 +218,24 @@ def downgrade() -> None:
     )
     op.drop_entity(public_urdep_inherit_subject_desired_state)
 
-    op.drop_index(op.f('ix_public_urdep_action_namespace'), table_name='urdep_action', schema='public')
-    op.drop_index(op.f('ix_public_urdep_action_name'), table_name='urdep_action', schema='public')
-    op.drop_table('urdep_action', schema='public')
-    op.drop_index(op.f('ix_public_urdep_subject_namespace'), table_name='urdep_subject', schema='public')
-    op.drop_index(op.f('ix_public_urdep_subject_name'), table_name='urdep_subject', schema='public')
-    op.drop_table('urdep_subject', schema='public')
-    op.drop_table('public.urdep_governor_component')
-    op.drop_index(op.f('ix_public_urdep_governor_namespace'), table_name='urdep_governor', schema='public')
-    op.drop_index(op.f('ix_public_urdep_governor_name'), table_name='urdep_governor', schema='public')
-    op.drop_table('urdep_governor', schema='public')
-    op.drop_index(op.f('ix_public_urdep_actuator_token_name'), table_name='urdep_actuator_token', schema='public')
-    op.drop_table('urdep_actuator_token', schema='public')
-    op.drop_index(op.f('ix_public_urdep_actuator_name'), table_name='urdep_actuator', schema='public')
-    op.drop_table('urdep_actuator', schema='public')
+    op.drop_index(op.f('ix_urdep_action_namespace_uuid'), table_name='urdep_action')
+    op.drop_index(op.f('ix_urdep_action_name'), table_name='urdep_action')
+    op.drop_table('urdep_action')
+    op.drop_index(op.f('ix_urdep_subject_namespace_uuid'), table_name='urdep_subject')
+    op.drop_index(op.f('ix_urdep_subject_name'), table_name='urdep_subject')
+    op.drop_table('urdep_subject')
+    op.drop_index(op.f('ix_urdep_governor_parameter_namespace_uuid'), table_name='urdep_governor_parameter')
+    op.drop_table('urdep_governor_parameter')
+    op.drop_index(op.f('ix_urdep_governor_component_namespace_uuid'), table_name='urdep_governor_component')
+    op.drop_table('urdep_governor_component')
+    op.drop_index(op.f('ix_urdep_governor_namespace_uuid'), table_name='urdep_governor')
+    op.drop_index(op.f('ix_urdep_governor_name'), table_name='urdep_governor')
+    op.drop_table('urdep_governor')
+    op.drop_index(op.f('ix_urdep_namespace_name'), table_name='urdep_namespace')
+    op.drop_table('urdep_namespace')
+    op.drop_index(op.f('ix_urdep_actuator_token_token'), table_name='urdep_actuator_token')
+    op.drop_index(op.f('ix_urdep_actuator_token_name'), table_name='urdep_actuator_token')
+    op.drop_table('urdep_actuator_token')
+    op.drop_index(op.f('ix_urdep_actuator_name'), table_name='urdep_actuator')
+    op.drop_table('urdep_actuator')
     # ### end Alembic commands ###
